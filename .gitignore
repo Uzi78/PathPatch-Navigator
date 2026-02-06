@@ -1,0 +1,46 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Model files (too large for GitHub)
+models/
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# Data files (too large)
+data/wsi_slides/*.svs
+data/wsi_slides/*.ndpi
+data/wsi_slides/*.tiff
+data/patches/*.png
+data/patches/*.jpg
+data/processed/
+
+# Output files
+output/
+test_output/
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env

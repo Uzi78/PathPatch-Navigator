@@ -1,0 +1,16 @@
+{
+  "slide_name": "CMU-1",
+  "num_patches": 1,
+  "patches": [
+    {
+      "patch_id": 3,
+      "slide_name": "CMU-1",
+      "coordinates": {
+        "x": 16976,
+        "y": 20576
+      },
+      "patch_size": 256,
+      "magnification": 20
+    }
+  ]
+}
