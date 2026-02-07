@@ -4,7 +4,7 @@ Converts analysis results to structured JSON format
 """
 
 import json
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from datetime import datetime
 from pathlib import Path
 import logging
@@ -31,7 +31,10 @@ class PathPatchJSONFormatter:
         differentials: List[Dict[str, Any]],
         patch_importance: List[Dict[str, Any]],
         recommended_next_steps: str = "",
-        teaching_point: str = ""
+        teaching_point: str = "",
+        ihc_recommendations: Optional[Dict[str, Any]] = None,
+        cost_analysis: Optional[Dict[str, Any]] = None,
+        report: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Create structured JSON output
@@ -83,8 +86,8 @@ class PathPatchJSONFormatter:
             
             "patch_importance_ranking": [
                 {
-                    "patch_id": p['patch_id'],
-                    "importance_score": p['importance_score'],
+                    "patch_id": p.get('patch_id'),
+                    "importance_score": p.get('importance_score'),
                     "rank": idx + 1,
                     "structures_present": p.get('structures_present', []),
                     "critical_features": p.get('critical_features', []),
@@ -92,6 +95,9 @@ class PathPatchJSONFormatter:
                 }
                 for idx, p in enumerate(patch_importance)
             ],
+            "ihc_recommendations": ihc_recommendations or {},
+            "cost_analysis": cost_analysis or {},
+            "report": report or {},
             
             "recommendations": {
                 "next_steps": recommended_next_steps,
@@ -102,7 +108,9 @@ class PathPatchJSONFormatter:
                 "total_patches_analyzed": len(patches_metadata),
                 "top_diagnosis": differentials[0]['diagnosis'] if differentials else "None",
                 "top_diagnosis_confidence": differentials[0]['confidence'] if differentials else 0,
-                "most_important_patch": patch_importance[0]['patch_id'] if patch_importance else None
+                "most_important_patch": patch_importance[0].get('patch_id') if patch_importance else None,
+                "ihc_panel_size": len((ihc_recommendations or {}).get('recommended_panel', [])),
+                "estimated_cost": (cost_analysis or {}).get('total_cost', 0.0)
             }
         }
         
