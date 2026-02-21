@@ -45,3 +45,10 @@ Thumbs.db
 
 # Environment variables
 .env
+
+# Large dataset directories
+data/metadata/
+data/raw/
+data/splits/
+tcga_test_output/
+processed/
