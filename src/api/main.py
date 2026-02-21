@@ -14,6 +14,8 @@ from pathlib import Path
 import sys
 import torch
 import gc
+import os
+import asyncio
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -55,6 +57,10 @@ diagnosis_inference = None
 importance_inference = None
 json_formatter = None
 orchestrator = None
+
+# Concurrency limiter for GPU-bound analysis
+MAX_CONCURRENT_ANALYSES = int(os.getenv("MAX_CONCURRENT_ANALYSES", "1"))
+ANALYSIS_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_ANALYSES)
 
 
 class ClinicalContext(BaseModel):
@@ -232,15 +238,20 @@ async def analyze_patches(
         if orchestrator is None:
             raise HTTPException(status_code=503, detail="Workflow orchestrator not ready")
 
-        workflow_payload = await orchestrator.execute_workflow(
-            {
-                "patches": patch_images,
-                "patch_metadata": patches_metadata,
-                "clinical_context": clinical_context,
-                "slide_name": slide_name,
-                "max_diagnoses": max_diagnoses,
-            }
-        )
+        # Rate-limit concurrent analyses to avoid GPU OOM
+        await ANALYSIS_SEMAPHORE.acquire()
+        try:
+            workflow_payload = await orchestrator.execute_workflow(
+                {
+                    "patches": patch_images,
+                    "patch_metadata": patches_metadata,
+                    "clinical_context": clinical_context,
+                    "slide_name": slide_name,
+                    "max_diagnoses": max_diagnoses,
+                }
+            )
+        finally:
+            ANALYSIS_SEMAPHORE.release()
 
         status = workflow_payload.get("status", "error")
         if status == "error":
