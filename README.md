@@ -12,6 +12,18 @@ The system helps users understand **how to form differential diagnoses**, **whic
 - Recommends **IHC stains** to confirm or rule out diagnoses
 - Produces **educational pathology report templates**
 
+### Agentic Workflow
+
+The backend exposes a five-agent orchestration pipeline:
+
+1. **Diagnosis Agent** – wraps the MedGemma differential module.
+2. **Patch Importance Agent** – ranks submitted patches by diagnostic value.
+3. **IHC Recommendation Agent** – queries the knowledge base for stain panels.
+4. **Cost Calculator Agent** – computes institutional pricing and turnaround.
+5. **Report Generator Agent** – produces CAP-aligned educational templates.
+
+All agents are coordinated by `AgentOrchestrator`, which also stores structured outputs via `PathPatchJSONFormatter`.
+
 
 ### Component Details
 
@@ -50,6 +62,17 @@ The system helps users understand **how to form differential diagnoses**, **whic
 - **AI Model**: MedGemma 1.5 for medical image-text understanding
 - **WSI Handling**: OpenSlide for slide processing
 - **Containerization**: Docker for consistent deployment
+
+### Running the API
+
+```bash
+python -m venv .venv
+.venv\\Scripts\\activate  # Windows
+pip install -r requirements.txt
+python src/api/main.py
+```
+
+Send a multipart `POST` request to `http://localhost:8000/api/v1/analyze` (3–5 PNG patches + clinical context form fields) to trigger the full agentic workflow. Each run writes a structured JSON artifact to `./output/`.
 
 ## Tech Stack
 

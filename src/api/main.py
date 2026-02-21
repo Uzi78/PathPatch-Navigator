@@ -4,7 +4,6 @@ Uses 4-bit quantization and memory management
 """
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -22,6 +21,12 @@ sys.path.append(str(Path(__file__).parent.parent))
 from inference.differential_diagnosis_agent_8gb import DifferentialDiagnosisAgent
 from inference.patch_importance_analyzer_8gb import PatchImportanceAnalyzer
 from utils.json_formatter import PathPatchJSONFormatter
+from agents.diagnosis_agent import DiagnosisAgent
+from agents.patch_importance_agent import PatchImportanceAgent as PatchAgentWrapper
+from agents.ihc_recommendation_agent import IHCRecommendationAgent
+from agents.cost_calculator_agent import CostCalculatorAgent
+from agents.report_generator_agent import ReportGeneratorAgent
+from agents.orchestrator import AgentOrchestrator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,9 +51,10 @@ app.add_middleware(
 MODEL_PATH = str(Path.home() / "pathpatch-navigator/models/medgemma-1.5-4b-it")
 OUTPUT_DIR = "./output"
 
-diagnosis_agent = None
-importance_analyzer = None
+diagnosis_inference = None
+importance_inference = None
 json_formatter = None
+orchestrator = None
 
 
 class ClinicalContext(BaseModel):
@@ -70,7 +76,7 @@ class AnalysisResponse(BaseModel):
 @app.on_event("startup")
 async def load_models():
     """Load models with 4-bit quantization"""
-    global diagnosis_agent, importance_analyzer, json_formatter
+    global diagnosis_inference, importance_inference, json_formatter, orchestrator
     
     logger.info("="*80)
     logger.info("PATHPATCH NAVIGATOR API - STARTUP (8GB VRAM MODE)")
@@ -78,14 +84,14 @@ async def load_models():
     
     try:
         logger.info("Loading DifferentialDiagnosisAgent with 4-bit quantization...")
-        diagnosis_agent = DifferentialDiagnosisAgent(
+        diagnosis_inference = DifferentialDiagnosisAgent(
             model_path=MODEL_PATH,
             device="cuda",
             use_4bit=True  # Critical for 8GB VRAM
         )
         
         logger.info("Loading PatchImportanceAnalyzer with 4-bit quantization...")
-        importance_analyzer = PatchImportanceAnalyzer(
+        importance_inference = PatchImportanceAnalyzer(
             model_path=MODEL_PATH,
             device="cuda",
             use_4bit=True
@@ -93,6 +99,22 @@ async def load_models():
         
         logger.info("Initializing JSONFormatter...")
         json_formatter = PathPatchJSONFormatter(output_dir=OUTPUT_DIR)
+
+        logger.info("Configuring agentic workflow components...")
+        diagnosis_agent = DiagnosisAgent(diagnosis_inference)
+        patch_agent = PatchAgentWrapper(importance_inference)
+        ihc_agent = IHCRecommendationAgent()
+        cost_agent = CostCalculatorAgent()
+        report_agent = ReportGeneratorAgent()
+
+        orchestrator = AgentOrchestrator(
+            diagnosis_agent=diagnosis_agent,
+            patch_agent=patch_agent,
+            ihc_agent=ihc_agent,
+            cost_agent=cost_agent,
+            report_agent=report_agent,
+            json_formatter=json_formatter,
+        )
         
         if torch.cuda.is_available():
             allocated = torch.cuda.memory_allocated(0) / 1e9
@@ -136,11 +158,18 @@ async def health_check():
     return {
         "status": "healthy",
         "models_loaded": all([
-            diagnosis_agent is not None,
-            importance_analyzer is not None,
-            json_formatter is not None
+            diagnosis_inference is not None,
+            importance_inference is not None,
+            orchestrator is not None,
         ]),
-        "gpu_status": gpu_status
+        "gpu_status": gpu_status,
+        "agents": [
+            "DiagnosisAgent",
+            "PatchImportanceAgent",
+            "IHCRecommendationAgent",
+            "CostCalculatorAgent",
+            "ReportGeneratorAgent",
+        ],
     }
 
 
@@ -200,59 +229,34 @@ async def analyze_patches(
             'stain': stain
         }
         
-        # Step 1: Generate differential diagnoses
-        logger.info("\nStep 1: Generating differential diagnoses...")
-        diff_result = diagnosis_agent.generate_differential(
-            patches=patch_images,
-            clinical_context=clinical_context,
-            max_diagnoses=max_diagnoses
+        if orchestrator is None:
+            raise HTTPException(status_code=503, detail="Workflow orchestrator not ready")
+
+        workflow_payload = await orchestrator.execute_workflow(
+            {
+                "patches": patch_images,
+                "patch_metadata": patches_metadata,
+                "clinical_context": clinical_context,
+                "slide_name": slide_name,
+                "max_diagnoses": max_diagnoses,
+            }
         )
-        
-        differentials = diff_result.get('differentials', [])
-        logger.info(f"  Generated {len(differentials)} diagnoses")
-        
-        # Clear cache between steps
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            gc.collect()
-        
-        # Step 2: Analyze patch importance
-        logger.info("\nStep 2: Analyzing patch importance...")
-        importance_result = importance_analyzer.analyze_importance(
-            patches=patch_images,
-            differentials=differentials
-        )
-        logger.info(f"  Ranked {len(importance_result)} patches")
-        
-        # Clear cache
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            gc.collect()
-        
-        # Step 3: Format results
-        logger.info("\nStep 3: Formatting results...")
-        structured_output = json_formatter.format_results(
-            slide_name=slide_name,
-            clinical_context=clinical_context,
-            patches_metadata=patches_metadata,
-            differentials=differentials,
-            patch_importance=importance_result,
-            recommended_next_steps=diff_result.get('recommended_next_steps', ''),
-            teaching_point=diff_result.get('teaching_point', '')
-        )
-        
-        output_file = json_formatter.save_json(structured_output)
-        
-        logger.info(f"\n{'='*80}")
-        logger.info(f"✓ ANALYSIS COMPLETE")
-        logger.info(f"  Top diagnosis: {differentials[0]['diagnosis']} ({differentials[0]['confidence']}%)")
-        logger.info(f"  Output: {output_file}")
-        logger.info(f"{'='*80}\n")
-        
+
+        status = workflow_payload.get("status", "error")
+        if status == "error":
+            raise HTTPException(status_code=500, detail=workflow_payload.get("error", "Unknown error"))
+
+        top_diag = workflow_payload.get("diagnosis", {}).get("differentials", [])
+        if top_diag:
+            top_entry = top_diag[0]
+            logger.info(
+                f"Top diagnosis: {top_entry['diagnosis']} ({top_entry['confidence']}%)"
+            )
+
         return AnalysisResponse(
             status="success",
             message=f"Successfully analyzed {len(patches)} patches",
-            results=structured_output
+            results=workflow_payload
         )
         
     except Exception as e:
