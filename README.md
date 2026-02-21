@@ -1,102 +1,168 @@
 # PathPatch Navigator
 
-PathPatch Navigator is an AI-powered **educational assistant for pathology residents** learning whole-slide histopathology (WSI) interpretation.
+An AI-powered educational assistant for pathology residents learning whole-slide histopathology (WSI) interpretation with multimodal reasoning and evidence-based IHC recommendations.
 
-The system helps users understand **how to form differential diagnoses**, **which image patches matter most**, and **how immunohistochemistry (IHC) decisions are made** — strictly as a learning aid.
+**Disclaimer:** Educational use only. Must not be used for clinical diagnosis or patient care.
 
-## What It Does
+## Overview
 
-- Analyzes **3–5 user-selected histopathology image patches**
-- Generates **ranked differential diagnoses**
-- Identifies **most diagnostically important patches**
-- Recommends **IHC stains** to confirm or rule out diagnoses
-- Produces **educational pathology report templates**
+PathPatch Navigator helps pathology trainees understand differential diagnoses, identify diagnostically important image regions, select appropriate IHC stains, and generate structured educational reports.
 
-### Agentic Workflow
+## Key Features
 
-The backend exposes a five-agent orchestration pipeline:
+- Multi-patch analysis (3-5 patches simultaneously)
+- Differential diagnosis generation with confidence scores
+- Patch importance ranking
+- IHC recommendation engine with evidence-based stain selection
+- Cost & availability analysis with institutional pricing
+- CAP-aligned report generation
+- 4-bit quantized inference (optimized for 8GB VRAM)
+- Memory-efficient sequential processing
+- MedGemma 1.5 multimodal AI
+- OpenSlide WSI support
+- Structured JSON output
+- FastAPI REST API
 
-1. **Diagnosis Agent** – wraps the MedGemma differential module.
-2. **Patch Importance Agent** – ranks submitted patches by diagnostic value.
-3. **IHC Recommendation Agent** – queries the knowledge base for stain panels.
-4. **Cost Calculator Agent** – computes institutional pricing and turnaround.
-5. **Report Generator Agent** – produces CAP-aligned educational templates.
+## Architecture
 
-All agents are coordinated by `AgentOrchestrator`, which also stores structured outputs via `PathPatchJSONFormatter`.
+5-agent orchestration pipeline:
+1. Diagnosis Agent - Generate ranked differential diagnoses from patches
+2. Patch Importance Agent - Rank submitted patches by diagnostic value  
+3. IHC Recommendation Agent - Recommend immunohistochemistry stains
+4. Cost Calculator Agent - Calculate testing costs and institutional availability
+5. Report Generator Agent - Create CAP-aligned pathology report templates
 
+Agents coordinate through `AgentOrchestrator` and output structured JSON via `PathPatchJSONFormatter`.
 
-### Component Details
-
-#### 1. **Web Interface Layer**
-- **WSI Viewer**: OpenSeadragon-based whole-slide image viewer
-- **Patch Selection Tool**: Interactive tool for selecting 3-5 diagnostic regions
-- **Clinical Context Input**: Forms for entering relevant clinical information
-
-#### 2. **AI Analysis Pipeline**
-- **Image Processing**: OpenSlide for WSI handling and patch extraction
-- **Multimodal Analysis**: MedGemma 1.5 for combined visual and text analysis
-- **Feature Extraction**: Automated identification of histologic patterns
-
-#### 3. **Agentic Workflow Engine**
-- **Orchestrator**: Coordinates agent communication and data flow
-- **Diagnosis Agent**: Primary diagnostic reasoning module
-- **Patch Importance Agent**: Spatial analysis and feature weighting
-- **IHC Recommendation Agent**: Evidence-based stain selection
-- **Report Generation Agent**: Structured educational content creation
-
-#### 4. **Educational Output Layer**
-- **Interactive Reports**: Clickable explanations and references
-- **Visual Guides**: Annotated patches with diagnostic markers
-- **Learning Templates**: Structured educational content for residency training
-
-### Data Flow
-1. User selects patches and provides clinical context
-2. System processes images and extracts features
-3. Agents collaboratively analyze the case
-4. Results are synthesized into educational outputs
-5. User receives interactive learning materials
-
-### Technology Integration
-- **Frontend**: HTML/CSS/JavaScript with OpenSeadragon integration
-- **Backend**: Python with FastAPI/Flask
-- **AI Model**: MedGemma 1.5 for medical image-text understanding
-- **WSI Handling**: OpenSlide for slide processing
-- **Containerization**: Docker for consistent deployment
-
-### Running the API
+## Installation
 
 ```bash
+cd pathpatch-navigator
 python -m venv .venv
-.venv\\Scripts\\activate  # Windows
+source .venv/bin/activate  # Linux/macOS
+.venv\Scripts\activate     # Windows
 pip install -r requirements.txt
+```
+
+Download MedGemma model:
+```bash
+huggingface-cli download googlelabs/medgemma-1.5-4b-it --local-dir models/medgemma-1.5-4b-it
+```
+
+Run tests:
+```bash
+python scripts/run_smoke_local.py
+python tests/test_full_pipeline.py
+python tests/test_on_tcga.py
+```
+
+## API Usage
+
+Start server:
+```bash
 python src/api/main.py
 ```
 
-Send a multipart `POST` request to `http://localhost:8000/api/v1/analyze` (3–5 PNG patches + clinical context form fields) to trigger the full agentic workflow. Each run writes a structured JSON artifact to `./output/`.
+POST to `http://localhost:8000/api/v1/analyze` with multipart form data (3-5 PNG patches + clinical context fields).
 
-## Tech Stack
+Response includes: differential diagnoses, patch importance rankings, IHC recommendations, cost analysis, and CAP-aligned report template.
 
-- **Python**
-- **MedGemma 1.5** (multimodal medical AI)
-- **OpenSlide / OpenSeadragon** (WSI handling & viewing)
-- **HTML, CSS, JavaScript** (frontend)
+## Data Structure
 
-## Intended Use
+Input data: PNG/JPG patches (256x256 at 20x magnification)
 
-**Educational use only.**  
-This project is designed to support pathology training and **must not** be used for clinical diagnosis or patient care.
+Directory structure:
+```
+data/
+├── metadata/: Patch extraction metadata
+├── patches/: Extracted patches per slide
+├── processed/: Post-processed patches
+├── raw/: BreCaHAD, DIAGSET, TCGA datasets
+├── splits/: Train/val/test splits
+└── wsi_slides/: .svs whole-slide images
+```
+
+Output: `./output/<case_id>_<timestamp>_results.json`
+
+## Scripts
+
+Data preparation:
+- `scripts/preprocessing/batch_extract_patches.py` - Extract patches from WSI
+- `scripts/preprocessing/create_train_test_split.py` - Generate splits
+- `scripts/data_download/download_tcga.py` - Download TCGA slides
+- `scripts/data_download/download_diagset.py` - Download DIAGSET
+- `scripts/data_download/download_brecahad.py` - Download BreCaHAD
+
+Testing:
+- `scripts/run_smoke_local.py` - Lightweight test without large models
+- `tests/test_full_pipeline.py` - End-to-end pipeline with MedGemma
+- `tests/test_integration_orchestrator.py` - Agent orchestrator tests
+- `tests/test_on_tcga.py` - Multi-slide TCGA evaluation
+
+## Knowledge Bases
+
+IHC Database (src/knowledge_base/ihc_database.py): 20+ stains for breast, prostate, epithelial, squamous, neuroendocrine, lymphoid pathology
+
+Cost Database (src/knowledge_base/cost_database.py): Institutional pricing (default: ER/PR $60, HER2 $80, Ki-67 $75, resident approval limit $300)
+
+CAP Guidelines (src/knowledge_base/cap_guidelines.py): Diagnostic criteria, Nottingham grading, Gleason scoring, synoptic elements
+
+Supported diagnoses: Invasive Ductal Carcinoma, Invasive Lobular Carcinoma, Prostate Adenocarcinoma
+
+## Inference Modules
+
+Differential Diagnosis Agent (src/inference/differential_diagnosis_agent_8gb.py): MedGemma 1.5 with 4-bit quantization for 8GB VRAM
+
+Patch Importance Analyzer (src/inference/patch_importance_analyzer_8gb.py): Sequential patch ranking with memory management
+
+## Requirements & Tech Stack
+
+Dependencies:
+```
+bitsandbytes, fastapi, huggingface_hub, numpy, opencv-python
+openslide-python, Pillow, pydantic, python-multipart, requests
+safetensors, sentencepiece, tokenizers, torch, transformers
+uvicorn, loguru
+```
+
+Tech Stack:
+- Backend: FastAPI + Uvicorn
+- AI/ML: MedGemma 1.5 (4-bit quantized)
+- Image Processing: OpenSlide, OpenCV, Pillow
+- Data: Pydantic, JSON
+- Logging: Loguru
+
+
 
 ## Project Status
 
-🚧 **Prototype / In Development**
+Complete:
+- Core agentic workflow (5 agents)
+- MedGemma inference optimization
+- IHC recommendations engine
+- Cost calculations with approvals
+- CAP-aligned report generation
+- REST API with multipart support
+- 4-bit quantization for 8GB VRAM
+- Comprehensive testing suite
 
-## Team Members
+## Team
 
-- Haris bin Amir  
-- Muhammad Uzair  
-- Muhammad Zabil  
-- Talha Kausar  
+- Haris bin Amir
+- Muhammad Uzair
+- Muhammad Zabil
+- Talha Kausar
 
 ## License
 
-To be determined.
+To be determined
+
+## Resources
+
+- MedGemma: https://huggingface.co/googlelabs/medgemma-1.5-4b-it
+- OpenSlide: http://openslide.org/
+- FastAPI: https://fastapi.tiangolo.com/
+- CAP Guidelines: https://www.cap.org/guides-and-quality-standards/cap-synoptic-checklists
+
+Last Updated: February 21, 2026
+Version: 1.0.0
