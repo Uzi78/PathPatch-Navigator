@@ -2,7 +2,7 @@
 
 An AI-powered educational assistant for pathology residents learning whole-slide histopathology (WSI) interpretation with multimodal reasoning and evidence-based IHC recommendations.
 
-**Disclaimer:** Educational use only. Must not be used for clinical diagnosis or patient care.
+**Disclaimer:** For Educational use only. Must not be used for clinical diagnosis or patient care.
 
 ## Overview
 
